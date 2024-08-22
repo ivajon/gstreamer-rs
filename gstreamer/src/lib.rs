@@ -12,23 +12,26 @@ pub use glib;
 pub use paste;
 
 #[doc(hidden)]
-pub static INITIALIZED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub static INITIALIZED: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
 
 #[cold]
 #[inline(never)]
 #[track_caller]
 pub fn assert_initialized() {
+    let mut inited = crate::INITIALIZED.lock().expect("Initialized lock is poinsoned");
     #[allow(unused_unsafe)]
     if unsafe { ffi::gst_is_initialized() } != glib::ffi::GTRUE {
         panic!("GStreamer has not been initialized. Call `gst::init` first.");
     } else {
-        crate::INITIALIZED.store(true, std::sync::atomic::Ordering::SeqCst);
+        *inited = true;
     }
+    drop(inited)
 }
 
 macro_rules! assert_initialized_main_thread {
     () => {
-        if !crate::INITIALIZED.load(std::sync::atomic::Ordering::SeqCst) {
+        let initiated = crate::INITIALIZED.lock().expect("Initialized lock is poinsoned");
+        if !*initiated {
             $crate::assert_initialized();
         }
     };
@@ -274,6 +277,7 @@ use std::ptr;
 #[doc(alias = "gst_init_check")]
 pub fn init() -> Result<(), glib::Error> {
     unsafe {
+        let mut initiated = crate::INITIALIZED.lock().expect("Initialized lock is poinsoned");
         use glib::translate::*;
 
         let mut error = ptr::null_mut();
@@ -282,9 +286,10 @@ pub fn init() -> Result<(), glib::Error> {
             ptr::null_mut(),
             &mut error,
         )) {
-            crate::INITIALIZED.store(true, std::sync::atomic::Ordering::SeqCst);
+            *initiated = true;
             Ok(())
         } else {
+            *initiated = false;
             Err(from_glib_full(error))
         }
     }
@@ -298,7 +303,7 @@ pub fn init() -> Result<(), glib::Error> {
 /// This must only be called once during the lifetime of the process, once no GStreamer threads
 /// are running anymore and all GStreamer resources are released.
 pub unsafe fn deinit() {
-    crate::INITIALIZED.store(false, std::sync::atomic::Ordering::SeqCst);
+    *crate::INITIALIZED.lock().expect("Initialized lock is poinsoned") = false;
     ffi::gst_deinit();
 }
 

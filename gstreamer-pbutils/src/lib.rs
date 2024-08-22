@@ -14,7 +14,8 @@ static PBUTILS_INIT: Once = Once::new();
 
 macro_rules! assert_initialized_main_thread {
     () => {
-        if !gst::INITIALIZED.load(std::sync::atomic::Ordering::SeqCst) {
+        let initiated = gst::INITIALIZED.lock().expect("Initiated lock is poisoned");
+        if !*initiated {
             gst::assert_initialized();
         }
         crate::PBUTILS_INIT.call_once(|| {

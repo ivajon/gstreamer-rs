@@ -11,7 +11,8 @@ static MPEGTS_INIT: Once = Once::new();
 
 macro_rules! assert_initialized_main_thread {
     () => {
-        if !gst::INITIALIZED.load(std::sync::atomic::Ordering::SeqCst) {
+        let initiated = gst::INITIALIZED.lock().expect("Initiated lock is poisoned");
+        if !*initiated {
             gst::assert_initialized();
         }
         crate::MPEGTS_INIT.call_once(|| unsafe { ffi::gst_mpegts_initialize() });
